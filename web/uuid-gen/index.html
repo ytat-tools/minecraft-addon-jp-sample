@@ -1,1 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>UUIDジェネレーター</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    #gen, #copy {
+      width: 33vw;       /* 画面幅の1/3 */
+      height: 50px;
+      font-size: 18px;
+      border-radius: 10px;
+      margin: 5px;
+    }
+    #uuid {
+      margin-top: 20px;
+      font-size: 16px;
+      word-break: break-all;
+    }
+    #copy {
+      display: none;  /* 初期状態は非表示 */
+    }
+  </style>
+</head>
+<body>
+  <button id="gen">UUID生成</button>
+  <p id="uuid"></p>
+  <button id="copy">コピー</button>
 
+  <script>
+    function generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0;
+        var v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    document.getElementById("gen").addEventListener("click", function() {
+      const uuid = generateUUID();
+      document.getElementById("uuid").textContent = uuid;
+      document.getElementById("copy").style.display = "inline-block"; // 生成されたら表示
+    });
+
+    document.getElementById("copy").addEventListener("click", function() {
+      const text = document.getElementById("uuid").textContent;
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        alert("コピーしました！\n" + text);
+      }).catch(err => {
+        alert("コピーに失敗しました: " + err);
+      });
+    });
+  </script>
+</body>
+</html>
