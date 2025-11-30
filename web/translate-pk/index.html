@@ -83,7 +83,7 @@ async function extractLangFiles(mainZip) {
         // 次に、内部に .mcpack が入っている場合は再帰
         const packPromises = [];
         zip.forEach((relativePath, file) => {
-            if (relativePath.endsWith(".mcpack")) {
+            if (relativePath.endsWith(".mcpack") || relativePath.endsWith(".zip")) {
                 packPromises.push(
                     file.async("blob").then(blob => JSZip.loadAsync(blob))
                 );
@@ -108,26 +108,23 @@ async function extractLangFiles(mainZip) {
 function translateLang(text) {
     const lines = text.split("\n");
     const out = [];
-
+    
     for (let line of lines) {
         const eqIndex = line.indexOf("=");
         if (eqIndex <= 0) {
             out.push(line);
             continue;
         }
-
+        
         const key = line.substring(0, eqIndex);
-        let value = line.substring(eqIndex + 1);
-
-        // 辞書置換（キー名は翻訳せず value のみ）
-        for (const src in pokemonDict) {
-            const pattern = new RegExp(src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g");
-            value = value.replace(pattern, pokemonDict[src]);
-        }
-
-        out.push(`${key}=${value}`);
+        const value = line.substring(eqIndex + 1).trim();
+        
+        // 完全一致する場合だけ翻訳する
+        const translated = pokemonDict[value] ?? value;
+        
+        out.push(`${key}=${translated}`);
     }
-
+    
     return out.join("\n");
 }
 
