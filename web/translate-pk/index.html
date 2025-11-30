@@ -65,26 +65,40 @@ function uuid() {
 // -----------------------------------------------------
 // ZIP 内の全階層を再帰して .lang を探す
 // -----------------------------------------------------
-function findLangFiles(zip) {
-    const found = [];
-
-    function scan(path, folder) {
-        Object.keys(folder.files).forEach(name => {
-            const file = folder.files[name];
-            const full = path ? `${path}${name}` : name;
-
-            if (file.dir) {
-                scan(full + "/", folder.folder(name));
-            } else {
-                if (full.endsWith(".lang")) {
-                    found.push(full);
-                }
+async function extractLangFiles(mainZip) {
+    const langFiles = [];
+    
+    // 1) 再帰的に mcpack を探して解凍
+    async function loadPack(zip) {
+        // パック内の .lang を検索
+        zip.forEach((relativePath, file) => {
+            if (!file.dir && /texts\/.*\.lang$/.test(relativePath)) {
+                langFiles.push({
+                    path: relativePath,
+                    file: file
+                });
             }
         });
+        
+        // 次に、内部に .mcpack が入っている場合は再帰
+        const packPromises = [];
+        zip.forEach((relativePath, file) => {
+            if (relativePath.endsWith(".mcpack")) {
+                packPromises.push(
+                    file.async("blob").then(blob => JSZip.loadAsync(blob))
+                );
+            }
+        });
+        
+        // 再帰的に mcpack をロード
+        const innerZips = await Promise.all(packPromises);
+        for (const inner of innerZips) {
+            await loadPack(inner);
+        }
     }
-
-    scan("", zip);
-    return found;
+    
+    await loadPack(mainZip);
+    return langFiles;
 }
 
 
@@ -116,7 +130,6 @@ function translateLang(text) {
 
     return out.join("\n");
 }
-
 
 // -----------------------------------------------------
 // 生成した ZIP をダウンロードリンクとして生成（スマホ対応）
@@ -161,13 +174,16 @@ document.getElementById("buildBtn").onclick = async () => {
         const zip = await JSZip.loadAsync(buffer);
 
         // 言語ファイル探索
+        document.getElementById("status").textContent = "langファイル捜索…";
+
         const langFiles = findLangFiles(zip);
 
         if (langFiles.length === 0) {
             document.getElementById("status").textContent = "言語ファイルが見つかりませんでした…";
             return;
         }
-
+        
+        document.getElementById("status").textContent = "langファイルが見つかりました";
         // とりあえず最初の .lang を使う
         const langName = langFiles[0];
         const origText = await zip.files[langName].async("string");
@@ -175,9 +191,11 @@ document.getElementById("buildBtn").onclick = async () => {
         const translated = translateLang(origText);
 
         // 新しい ZIP（mcpack）を作成
+        document.getElementById("status").textContent = "新しいパックを作成します.";
         const outZip = new JSZip();
 
         // manifest.json を生成
+        document.getElementById("status").textContent = "manifest.jsonを作成しています.";
         const manifest = {
             ...manifestTemplate,
             header: {
@@ -193,6 +211,7 @@ document.getElementById("buildBtn").onclick = async () => {
         outZip.file("manifest.json", JSON.stringify(manifest, null, 2));
         outZip.file("texts/ja_JP.lang", translated);
 
+        document.getElementById("status").textContent = "圧縮しています.";
         const outBlob = await outZip.generateAsync({ type: "blob" });
 
         createDownloadLink(outBlob);
@@ -205,5 +224,5 @@ document.getElementById("buildBtn").onclick = async () => {
 };
 </script>
 
-</body>アドオン翻訳支援パック生成ツール
+</body>
 </html>
