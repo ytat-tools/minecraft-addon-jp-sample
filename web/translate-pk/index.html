@@ -166,60 +166,46 @@ document.getElementById("buildBtn").onclick = async () => {
         return;
     }
     const addonFile = input.files[0];
-
+    
     document.getElementById("status").textContent = "読み込み中…";
-
+    
     try {
         const buffer = await addonFile.arrayBuffer();
         const zip = await JSZip.loadAsync(buffer);
-
-        // 言語ファイル探索
+        
         document.getElementById("status").textContent = "langファイル捜索…";
-
-        const langFiles = findLangFiles(zip);
-
+        
+        // ★★★ 修正ポイント ★★★
+        const langFiles = await extractLangFiles(zip);
+        
         if (langFiles.length === 0) {
             document.getElementById("status").textContent = "言語ファイルが見つかりませんでした…";
             return;
         }
         
-        document.getElementById("status").textContent = "langファイルが見つかりました";
-        // とりあえず最初の .lang を使う
-        const langName = langFiles[0];
-        const origText = await zip.files[langName].async("string");
-
+        const langInfo = langFiles[0];
+        const origText = await langInfo.file.async("string");
         const translated = translateLang(origText);
-
-        // 新しい ZIP（mcpack）を作成
-        document.getElementById("status").textContent = "新しいパックを作成します.";
+        
         const outZip = new JSZip();
-
-        // manifest.json を生成
-        document.getElementById("status").textContent = "manifest.jsonを作成しています.";
+        
         const manifest = {
             ...manifestTemplate,
-            header: {
-                ...manifestTemplate.header,
-                uuid: uuid()
-            },
-            modules: manifestTemplate.modules.map(m => ({
-                ...m,
-                uuid: uuid()
-            }))
+            header: { ...manifestTemplate.header, uuid: uuid() },
+            modules: manifestTemplate.modules.map(m => ({ ...m, uuid: uuid() }))
         };
-
+        
         outZip.file("manifest.json", JSON.stringify(manifest, null, 2));
         outZip.file("texts/ja_JP.lang", translated);
-
-        document.getElementById("status").textContent = "圧縮しています.";
-        const outBlob = await outZip.generateAsync({ type: "blob" });
-
-        createDownloadLink(outBlob);
-        document.getElementById("status").textContent = "完成しました！";
-
+        
+        const blob = await outZip.generateAsync({ type: "blob" });
+        createDownloadLink(blob);
+        
+        document.getElementById("status").textContent = "生成完了！";
+        
     } catch (err) {
         console.error(err);
-        alert("エラー：アドオンの解析に失敗しました");
+        document.getElementById("status").textContent = "解析に失敗しました…";
     }
 };
 </script>
