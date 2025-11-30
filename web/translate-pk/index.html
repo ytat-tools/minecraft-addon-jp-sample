@@ -5,14 +5,8 @@
 <title>アドオン翻訳支援パック生成ツール</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-body {
-  font-family: sans-serif;
-  padding: 20px;
-}
-#downloadLink {
-  font-size: 18px;
-  color: blue;
-}
+body { font-family: sans-serif; padding: 20px; }
+#downloadLink { font-size: 18px; color: blue; }
 </style>
 </head>
 <body>
@@ -27,9 +21,6 @@ body {
 <div id="status" style="margin-top:20px;color:#444;"></div>
 
 <script>
-// -----------------------------------------------------
-// 辞書の読み込み（サーバー上の pokemonDict.json を使用）
-// -----------------------------------------------------
 let pokemonDict = {};
 let manifestTemplate = {};
 
@@ -49,48 +40,25 @@ async function loadExternalFiles() {
 }
 loadExternalFiles();
 
-
-// -----------------------------------------------------
-// UUID 生成
-// -----------------------------------------------------
 function uuid() {
-    // return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
-    //    const r = Math.random() * 16 | 0;
-    //    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
-    //});
     return crypto.randomUUID();
 }
 
-
-// -----------------------------------------------------
-// ZIP 内の全階層を再帰して .lang を探す
-// -----------------------------------------------------
 async function extractLangFiles(mainZip) {
     const langFiles = [];
     
-    // 1) 再帰的に mcpack を探して解凍
     async function loadPack(zip) {
-        // パック内の .lang を検索
         zip.forEach((relativePath, file) => {
             if (!file.dir && /texts\/.*\.lang$/.test(relativePath)) {
-                langFiles.push({
-                    path: relativePath,
-                    file: file
-                });
+                langFiles.push({ path: relativePath, file: file });
             }
         });
-        
-        // 次に、内部に .mcpack が入っている場合は再帰
         const packPromises = [];
         zip.forEach((relativePath, file) => {
             if (relativePath.endsWith(".mcpack") || relativePath.endsWith(".zip")) {
-                packPromises.push(
-                    file.async("blob").then(blob => JSZip.loadAsync(blob))
-                );
+                packPromises.push(file.async("blob").then(blob => JSZip.loadAsync(blob)));
             }
         });
-        
-        // 再帰的に mcpack をロード
         const innerZips = await Promise.all(packPromises);
         for (const inner of innerZips) {
             await loadPack(inner);
@@ -101,44 +69,33 @@ async function extractLangFiles(mainZip) {
     return langFiles;
 }
 
-
-// -----------------------------------------------------
-// 言語ファイルの翻訳（定義文字列のみ置換）
-// -----------------------------------------------------
 function translateLang(text) {
-    // 改行コードを統一（CRLF も LF に）
+    // CRLFをLFに統一
     const lines = text.replace(/\r\n/g, "\n").split("\n");
     const out = [];
-    
+
     for (let line of lines) {
         const eqIndex = line.indexOf("=");
         if (eqIndex <= 0) {
             out.push(line);
             continue;
         }
-        
         const key = line.substring(0, eqIndex);
         let value = line.substring(eqIndex + 1);
-        
+
         for (const src in pokemonDict) {
             const pattern = new RegExp(src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g");
             value = value.replace(pattern, pokemonDict[src]);
         }
-        
+
         out.push(`${key}=${value}`);
     }
-    
-    // 改行をLFで結合（必要に応じてCRLFに変えてもOK）
+
     return out.join("\n");
 }
 
-// -----------------------------------------------------
-// 生成した ZIP をダウンロードリンクとして生成（スマホ対応）
-// -----------------------------------------------------
 function createDownloadLink(blob) {
     const url = URL.createObjectURL(blob);
-
-    // 古いリンクがあれば削除
     let old = document.getElementById("downloadLink");
     if (old) old.remove();
 
@@ -146,20 +103,14 @@ function createDownloadLink(blob) {
     a.id = "downloadLink";
     a.href = url;
     a.download = "TranslationPK.mcpack";
-    a.textContent = "ダウンロードが始まらない場合、ここから翻訳パックを保存してください";
+    a.textContent = "★ダウンロードが始まらない場合は、ここから翻訳パックを保存してください";
     a.style.display = "block";
     a.style.marginTop = "20px";
 
     document.body.appendChild(a);
-
-    // スマホのため自動クリック
     setTimeout(() => a.click(), 300);
 }
 
-
-// -----------------------------------------------------
-// メイン：翻訳パック生成
-// -----------------------------------------------------
 document.getElementById("buildBtn").onclick = async () => {
     const input = document.getElementById("addonInput");
     if (!input.files.length) {
@@ -167,43 +118,40 @@ document.getElementById("buildBtn").onclick = async () => {
         return;
     }
     const addonFile = input.files[0];
-    
     document.getElementById("status").textContent = "読み込み中…";
-    
+
     try {
         const buffer = await addonFile.arrayBuffer();
         const zip = await JSZip.loadAsync(buffer);
-        
         document.getElementById("status").textContent = "langファイル捜索…";
-        
-        // ★★★ 修正ポイント ★★★
+
         const langFiles = await extractLangFiles(zip);
-        
         if (langFiles.length === 0) {
             document.getElementById("status").textContent = "言語ファイルが見つかりませんでした…";
             return;
         }
-        
+
+        // 1個目のlangファイルを翻訳
         const langInfo = langFiles[0];
-        const origText = await langInfo.file.async("string");
+        let origText = await langInfo.file.async("string");
+        // BOM除去
+        origText = origText.charCodeAt(0) === 0xFEFF ? origText.slice(1) : origText;
         const translated = translateLang(origText);
-        
+
         const outZip = new JSZip();
-        
         const manifest = {
             ...manifestTemplate,
             header: { ...manifestTemplate.header, uuid: uuid() },
             modules: manifestTemplate.modules.map(m => ({ ...m, uuid: uuid() }))
         };
-        
         outZip.file("manifest.json", JSON.stringify(manifest, null, 2));
-        outZip.file("texts/ja_JP.lang", translated);
-        
+        // ここが重要！binary:false を指定して全行保存
+        outZip.file("texts/ja_JP.lang", translated, { binary: false });
+
         const blob = await outZip.generateAsync({ type: "blob" });
         createDownloadLink(blob);
-        
         document.getElementById("status").textContent = "生成完了！";
-        
+
     } catch (err) {
         console.error(err);
         document.getElementById("status").textContent = "解析に失敗しました…";
