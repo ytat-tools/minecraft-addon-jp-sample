@@ -85,15 +85,19 @@ async function extractLangFiles(mainZip) {
         zip.forEach((relativePath, file) => {
             if (relativePath.endsWith(".mcpack") || relativePath.endsWith(".zip")) {
                 packPromises.push(
-                    file.async("arraybuffer").then(buffer => JSZip.loadAsync(buffer))
+                    // 修正: arraybufferを取得し、その結果を直接loadAsyncに渡す
+                   file.async("arraybuffer").then(buffer => JSZip.loadAsync(buffer))
                 );
             }
         });
-        
+
         // 再帰的に mcpack をロード
         const innerZips = await Promise.all(packPromises);
-        for (const inner of innerZips) {
-            await loadPack(inner);
+        for (const inner of innerZips){
+            // inner は JSZip.loadAsync() によって生成された JSZip インスタンス
+            if (inner) {
+                await loadPack(inner);
+            }
         }
     }
     
@@ -145,7 +149,7 @@ function createDownloadLink(blob) {
     a.id = "downloadLink";
     a.href = url;
     a.download = "TranslationPK.mcpack";
-    a.textContent = "翻訳パックをダウンロード";
+    a.textContent = "★翻訳パックをダウンロード";
     a.style.display = "block";
     a.style.marginTop = "20px";
 
