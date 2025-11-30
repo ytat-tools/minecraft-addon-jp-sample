@@ -105,34 +105,31 @@ async function extractLangFiles(mainZip) {
 // -----------------------------------------------------
 // 言語ファイルの翻訳（定義文字列のみ置換）
 // -----------------------------------------------------
-const status = document.getElementById("status");
-
 function translateLang(text) {
-    const lines = text.split(/\r?\n/);
+    const lines = text.split("\n");
     const out = [];
-    
+
     for (let line of lines) {
         const eqIndex = line.indexOf("=");
-        
         if (eqIndex <= 0) {
             out.push(line);
             continue;
         }
-        
-        const key = line.slice(0, eqIndex);
-        let value = line.slice(eqIndex + 1);
-        const trimmed = value.trim();
-        
-        if (pokemonDict[trimmed] !== undefined) {
-            value = pokemonDict[trimmed];
+
+        const key = line.substring(0, eqIndex);
+        let value = line.substring(eqIndex + 1);
+
+        // 辞書置換（キー名は翻訳せず value のみ）
+        for (const src in pokemonDict) {
+            if (value.trim() === src) {
+                   value = pokemonDict[src];
+                   break; // 一致したら置換して終了
+            }
         }
-        
-        // 確認用に画面に出力
-        status.textContent += `"${trimmed}" → "${value}"\n`;
-        
+
         out.push(`${key}=${value}`);
     }
-    
+
     return out.join("\n");
 }
 
