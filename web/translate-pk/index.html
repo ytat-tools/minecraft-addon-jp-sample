@@ -121,10 +121,8 @@ function translateLang(text) {
 
         // 辞書置換（キー名は翻訳せず value のみ）
         for (const src in pokemonDict) {
-            if (value.trim() === src) {
-                   value = pokemonDict[src];
-                   break; // 一致したら置換して終了
-            }
+            const pattern = new RegExp(src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g");
+            value = value.replace(pattern, pokemonDict[src]);
         }
 
         out.push(`${key}=${value}`);
@@ -147,7 +145,7 @@ function createDownloadLink(blob) {
     a.id = "downloadLink";
     a.href = url;
     a.download = "TranslationPK.mcpack";
-    a.textContent = "翻訳パックをダウンロード";
+    a.textContent = "ダウンロードが始まらない場合は、ここから翻訳パックを保存してください";
     a.style.display = "block";
     a.style.marginTop = "20px";
 
