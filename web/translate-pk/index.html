@@ -106,28 +106,29 @@ async function extractLangFiles(mainZip) {
 // 言語ファイルの翻訳（定義文字列のみ置換）
 // -----------------------------------------------------
 function translateLang(text) {
-    const lines = text.split("\n");
+    // 改行コードを統一（CRLF も LF に）
+    const lines = text.replace(/\r\n/g, "\n").split("\n");
     const out = [];
-
+    
     for (let line of lines) {
         const eqIndex = line.indexOf("=");
         if (eqIndex <= 0) {
             out.push(line);
             continue;
         }
-
+        
         const key = line.substring(0, eqIndex);
         let value = line.substring(eqIndex + 1);
-
-        // 辞書置換（キー名は翻訳せず value のみ）
+        
         for (const src in pokemonDict) {
             const pattern = new RegExp(src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g");
             value = value.replace(pattern, pokemonDict[src]);
         }
-
+        
         out.push(`${key}=${value}`);
     }
-
+    
+    // 改行をLFで結合（必要に応じてCRLFに変えてもOK）
     return out.join("\n");
 }
 
@@ -145,7 +146,7 @@ function createDownloadLink(blob) {
     a.id = "downloadLink";
     a.href = url;
     a.download = "TranslationPK.mcpack";
-    a.textContent = "ダウンロードが始まらない場合は、ここから翻訳パックを保存してください";
+    a.textContent = "ダウンロードが始まらない場合、ここから翻訳パックを保存してください";
     a.style.display = "block";
     a.style.marginTop = "20px";
 
