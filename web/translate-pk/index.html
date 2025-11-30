@@ -68,30 +68,39 @@ function uuid() {
 async function extractLangFiles(mainZip) {
     const langFiles = [];
     
+    // 1) 再帰的に mcpack を探して解凍
     async function loadPack(zip) {
-        // 元の forEach を使う
+        // パック内の .lang を検索
         zip.forEach((relativePath, file) => {
-            if (!file.dir && relativePath.endsWith("en_US.lang")) {
-                langFiles.push(file);
+            if (!file.dir && /texts\/.*\.lang$/.test(relativePath)) {
+                langFiles.push({
+                    path: relativePath,
+                    file: file
+                });
             }
         });
         
-        // 内部に mcpack / zip があれば再帰
-        const innerPromises = [];
+        // 次に、内部に .mcpack が入っている場合は再帰
+        const packPromises = [];
         zip.forEach((relativePath, file) => {
             if (relativePath.endsWith(".mcpack") || relativePath.endsWith(".zip")) {
-                innerPromises.push(
-                    file.async("blob").then(blob => JSZip.loadAsync(blob)).then(innerZip => loadPack(innerZip))
+                packPromises.push(
+                    file.async("arraybuffer").then(buffer => JSZip.loadAsync(buffer))
                 );
             }
         });
         
-        await Promise.all(innerPromises);
+        // 再帰的に mcpack をロード
+        const innerZips = await Promise.all(packPromises);
+        for (const inner of innerZips) {
+            await loadPack(inner);
+        }
     }
     
     await loadPack(mainZip);
-    return langFiles; // ファイルオブジェクトの配列
+    return langFiles;
 }
+
 
 // -----------------------------------------------------
 // 言語ファイルの翻訳（定義文字列のみ置換）
