@@ -1,176 +1,209 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ポケモン翻訳パック生成ツール</title>
-
+<meta charset="UTF-8">
+<title>アドオン翻訳支援パック生成ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-  body {
-    font-family: sans-serif;
-    padding: 20px;
-  }
-  h2 {
-    margin-top: 25px;
-  }
-  .box {
-    border: 1px solid #ccc;
-    padding: 15px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-  }
+body {
+  font-family: sans-serif;
+  padding: 20px;
+}
+#downloadLink {
+  font-size: 18px;
+  color: blue;
+}
 </style>
 </head>
-
 <body>
-<h1>翻訳パック生成ツール</h1>
-<p>対象のアドオン(.mcaddon / .mcpack / zip) を読み込むと、翻訳済みの ja_JP.lang を生成します。</p>
 
-<div class="box">
-  <h2>① 辞書データ読み込み</h2>
-  <button id="loadDictBtn">辞書を読み込む</button>
-  <p id="dictStatus">未読み込み</p>
-</div>
+<h2>アドオン翻訳支援パック生成ツール</h2>
 
-<div class="box">
-  <h2>② アドオンを読み込む</h2>
-  <input type="file" id="addonFile" accept=".mcaddon,.mcpack,.zip" />
-  <p id="addonStatus">未選択</p>
-</div>
+<p>マイクラ統合版アドオン（.mcaddon / .mcpack）を選択してください：</p>
+<input type="file" id="addonInput" accept=".mcaddon,.mcpack,.zip">
 
-<button id="buildBtn" disabled>翻訳パックを作成</button>
+<button id="buildBtn" style="margin-left:10px;">翻訳パックを生成</button>
 
-<!-- ダウンロードリンク生成位置 -->
-<div id="downloadArea"></div>
+<div id="status" style="margin-top:20px;color:#444;"></div>
 
 <script>
-// ----------------------
-// 辞書データ読み込み
-// ----------------------
-let dictionary = {};
+// -----------------------------------------------------
+// 辞書の読み込み（サーバー上の pokemonDict.json を使用）
+// -----------------------------------------------------
+let pokemonDict = {};
+let manifestTemplate = {};
 
-document.getElementById("loadDictBtn").onclick = async () => {
-  try {
-    const res = await fetch("./pokemonDict.json");
-    dictionary = await res.json();
-    document.getElementById("dictStatus").textContent = "辞書ロード完了 ✔";
-    enableBuildButton();
-  } catch (e) {
-    document.getElementById("dictStatus").textContent = "辞書ファイルの読み込みに失敗…";
-  }
-};
+async function loadExternalFiles() {
+    try {
+        const dictRes = await fetch("./pokemonDict.json");
+        pokemonDict = await dictRes.json();
 
+        const maniRes = await fetch("./manifestTemplate.json");
+        manifestTemplate = await maniRes.json();
 
-// ----------------------
-// アドオンファイル選択
-// ----------------------
-let addonFile = null;
-
-document.getElementById("addonFile").onchange = (ev) => {
-  addonFile = ev.target.files[0];
-  if (addonFile) {
-    document.getElementById("addonStatus").textContent = addonFile.name + " を読み込みます";
-    enableBuildButton();
-  }
-};
+        console.log("辞書・テンプレート読み込み完了！");
+    } catch (err) {
+        console.error("辞書 or テンプレート読み込み失敗", err);
+        alert("辞書またはテンプレートが読み込めませんでした。ファイルを同じフォルダに置いてね。");
+    }
+}
+loadExternalFiles();
 
 
-// ----------------------
-// 両方揃ったらボタン解放
-// ----------------------
-function enableBuildButton() {
-  if (addonFile && Object.keys(dictionary).length > 0) {
-    document.getElementById("buildBtn").disabled = false;
-  }
+// -----------------------------------------------------
+// UUID 生成
+// -----------------------------------------------------
+function uuid() {
+    // return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    //    const r = Math.random() * 16 | 0;
+    //    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+    //});
+    return crypto.randomUUID();
 }
 
 
-// ----------------------
-// ZIP 読み込み＆翻訳
-// ----------------------
-document.getElementById("buildBtn").onclick = async () => {
-  if (!addonFile) return;
+// -----------------------------------------------------
+// ZIP 内の全階層を再帰して .lang を探す
+// -----------------------------------------------------
+function findLangFiles(zip) {
+    const found = [];
 
-  const buffer = await addonFile.arrayBuffer();
-  const zip = await JSZip.loadAsync(buffer);
+    function scan(path, folder) {
+        Object.keys(folder.files).forEach(name => {
+            const file = folder.files[name];
+            const full = path ? `${path}${name}` : name;
 
-  // 言語ファイル探し
-  const langFiles = Object.keys(zip.files).filter(
-    f => f.includes("texts/") && f.endsWith(".lang")
-  );
-
-  if (langFiles.length === 0) {
-    alert("言語ファイルが見つからなかったよ…");
-    return;
-  }
-
-  // とりあえず最初の言語ファイルを翻訳する
-  const langName = langFiles[0];
-  const origText = await zip.files[langName].async("string");
-
-  const translated = translateLang(origText);
-
-  // 新ZIP生成
-  const newZip = new JSZip();
-  newZip.file("texts/ja_JP.lang", translated);
-
-  const outBlob = await newZip.generateAsync({ type: "blob" });
-  createDownloadLink(outBlob);
-};
-
-
-// ----------------------
-// 翻訳関数（値だけ翻訳）
-// ----------------------
-function translateLang(text) {
-  const lines = text.split("\n");
-  const out = [];
-
-  for (let line of lines) {
-    const eq = line.indexOf("=");
-    if (eq === -1) {
-      out.push(line);
-      continue;
+            if (file.dir) {
+                scan(full + "/", folder.folder(name));
+            } else {
+                if (full.endsWith(".lang")) {
+                    found.push(full);
+                }
+            }
+        });
     }
 
-    const key = line.slice(0, eq).trim();
-    const val = line.slice(eq + 1).trim();
-
-    const translatedVal = dictionary[val] || val;
-    out.push(`${key}=${translatedVal}`);
-  }
-
-  return out.join("\n");
+    scan("", zip);
+    return found;
 }
 
 
-// ----------------------
-// スマホ対応ダウンロードリンク生成
-// ----------------------
+// -----------------------------------------------------
+// 言語ファイルの翻訳（定義文字列のみ置換）
+// -----------------------------------------------------
+function translateLang(text) {
+    const lines = text.split("\n");
+    const out = [];
+
+    for (let line of lines) {
+        const eqIndex = line.indexOf("=");
+        if (eqIndex <= 0) {
+            out.push(line);
+            continue;
+        }
+
+        const key = line.substring(0, eqIndex);
+        let value = line.substring(eqIndex + 1);
+
+        // 辞書置換（キー名は翻訳せず value のみ）
+        for (const src in pokemonDict) {
+            const pattern = new RegExp(src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g");
+            value = value.replace(pattern, pokemonDict[src]);
+        }
+
+        out.push(`${key}=${value}`);
+    }
+
+    return out.join("\n");
+}
+
+
+// -----------------------------------------------------
+// 生成した ZIP をダウンロードリンクとして生成（スマホ対応）
+// -----------------------------------------------------
 function createDownloadLink(blob) {
-  const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
 
-  // 古いリンク消す
-  const area = document.getElementById("downloadArea");
-  area.innerHTML = "";
+    // 古いリンクがあれば削除
+    let old = document.getElementById("downloadLink");
+    if (old) old.remove();
 
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "Pokemon_JP_Translation.mcpack";
-  link.textContent = "翻訳パックをダウンロード";
-  link.style.display = "block";
-  link.style.marginTop = "20px";
+    const a = document.createElement("a");
+    a.id = "downloadLink";
+    a.href = url;
+    a.download = "TranslationPK.mcpack";
+    a.textContent = "翻訳パックをダウンロード";
+    a.style.display = "block";
+    a.style.marginTop = "20px";
 
-  area.appendChild(link);
+    document.body.appendChild(a);
 
-  // スマホ対応の自動クリック
-  setTimeout(() => link.click(), 200);
+    // スマホのため自動クリック
+    setTimeout(() => a.click(), 300);
 }
 
+
+// -----------------------------------------------------
+// メイン：翻訳パック生成
+// -----------------------------------------------------
+document.getElementById("buildBtn").onclick = async () => {
+    const input = document.getElementById("addonInput");
+    if (!input.files.length) {
+        alert("アドオンファイルを選択してください！");
+        return;
+    }
+    const addonFile = input.files[0];
+
+    document.getElementById("status").textContent = "読み込み中…";
+
+    try {
+        const buffer = await addonFile.arrayBuffer();
+        const zip = await JSZip.loadAsync(buffer);
+
+        // 言語ファイル探索
+        const langFiles = findLangFiles(zip);
+
+        if (langFiles.length === 0) {
+            document.getElementById("status").textContent = "言語ファイルが見つかりませんでした…";
+            return;
+        }
+
+        // とりあえず最初の .lang を使う
+        const langName = langFiles[0];
+        const origText = await zip.files[langName].async("string");
+
+        const translated = translateLang(origText);
+
+        // 新しい ZIP（mcpack）を作成
+        const outZip = new JSZip();
+
+        // manifest.json を生成
+        const manifest = {
+            ...manifestTemplate,
+            header: {
+                ...manifestTemplate.header,
+                uuid: uuid()
+            },
+            modules: manifestTemplate.modules.map(m => ({
+                ...m,
+                uuid: uuid()
+            }))
+        };
+
+        outZip.file("manifest.json", JSON.stringify(manifest, null, 2));
+        outZip.file("texts/ja_JP.lang", translated);
+
+        const outBlob = await outZip.generateAsync({ type: "blob" });
+
+        createDownloadLink(outBlob);
+        document.getElementById("status").textContent = "完成しました！";
+
+    } catch (err) {
+        console.error(err);
+        alert("エラー：アドオンの解析に失敗しました");
+    }
+};
 </script>
 
-<!-- JSZip CDN -->
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-
-</body>
+</body>アドオン翻訳支援パック生成ツール
 </html>
