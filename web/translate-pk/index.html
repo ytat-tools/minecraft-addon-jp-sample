@@ -63,44 +63,42 @@ function uuid() {
 
 
 // -----------------------------------------------------
-// ZIP 内の全階層を再帰して .lang を探す
+// mcaddon / mcpack 内の en_US.lang を全階層から探す
 // -----------------------------------------------------
 async function extractLangFiles(mainZip) {
     const langFiles = [];
     
-    // 1) 再帰的に mcpack を探して解凍
-    async function loadPack(zip) {
-        // パック内の .lang を検索
-        zip.forEach((relativePath, file) => {
-            if (!file.dir && /texts\/.*\.lang$/.test(relativePath)) {
+    // zip 内を再帰探索
+    async function loadPack(zip, pathPrefix = "") {
+        const files = Object.keys(zip.files);
+        
+        for (const name of files) {
+            const file = zip.files[name];
+            const fullPath = pathPrefix + name;
+            
+            if (file.dir) continue;
+            
+            // en_US.lang だけを対象にする
+            if (fullPath.endsWith("en_US.lang")) {
+                const content = await file.async("string");
                 langFiles.push({
-                    path: relativePath,
-                    file: file
+                    path: fullPath,
+                    content: content
                 });
             }
-        });
-        
-        // 次に、内部に .mcpack が入っている場合は再帰
-        const packPromises = [];
-        zip.forEach((relativePath, file) => {
-            if (relativePath.endsWith(".mcpack") || relativePath.endsWith(".zip")) {
-                packPromises.push(
-                    file.async("blob").then(blob => JSZip.loadAsync(blob))
-                );
+            
+            // 内部に zip / mcpack があれば再帰
+            if (name.endsWith(".mcpack") || name.endsWith(".zip")) {
+                const innerBlob = await file.async("blob");
+                const innerZip = await JSZip.loadAsync(innerBlob);
+                await loadPack(innerZip, fullPath + "/");
             }
-        });
-        
-        // 再帰的に mcpack をロード
-        const innerZips = await Promise.all(packPromises);
-        for (const inner of innerZips) {
-            await loadPack(inner);
         }
     }
     
     await loadPack(mainZip);
-    return langFiles;
+    return langFiles; // [{path, content}, ...]
 }
-
 
 // -----------------------------------------------------
 // 言語ファイルの翻訳（定義文字列のみ置換）
@@ -145,7 +143,7 @@ function createDownloadLink(blob) {
     a.id = "downloadLink";
     a.href = url;
     a.download = "TranslationPK.mcpack";
-    a.textContent = "翻訳パックをダウンロード";
+    a.textContent = "ダウンロードしないときはここから翻訳パックを保存";
     a.style.display = "block";
     a.style.marginTop = "20px";
 
